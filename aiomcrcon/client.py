@@ -1,6 +1,7 @@
 import asyncio
 import random
 import struct
+import re
 
 from .errors import *
 
@@ -62,38 +63,33 @@ class Client:
 
         # pack length of packet + rest of packet data
         packet = struct.pack("<i", len(packet_data)) + packet_data
-
         # send the data to the server
         self._writer.write(packet)
         await self._writer.drain()
-
         # read + unpack length of incoming packet
         in_len = struct.unpack("<i", (await self._reader.read(4)))[0]
-
         # read rest of packet data
         in_data = await self._reader.read(in_len)
-
         if not in_data.endswith(b"\x00\x00"):
             raise ValueError("Invalid data received from server.")
-
         # decode the incoming request id and packet type
         in_type, in_req_id = struct.unpack("<ii", in_data[0:8])
-
         if in_type == MessageType.INVALID_AUTH:
             raise IncorrectPasswordError
-
         # decode the received message
         in_msg = in_data[8:-2].decode("utf8")
-
         return in_msg, in_type
 
-    async def send_cmd(self, cmd: str, timeout=2) -> tuple:
+    async def send_cmd(self, cmd: str, timeout=2, strip_colors = True) -> tuple:
         """Sends a command to the server."""
-
         if not self._ready:
             raise ClientNotConnectedError
-
-        return await asyncio.wait_for(self._send_msg(MessageType.COMMAND, cmd), timeout)
+        value = await asyncio.wait_for(self._send_msg(MessageType.COMMAND, cmd), timeout)
+        if type(strip_colors) == bool and strip_colors:
+            value = list(value)
+            value[0] = re.sub("§.", "", value[0])
+            return tuple(value)
+        return value
 
     async def close(self):
         """Closes the connection between the client and the server."""
